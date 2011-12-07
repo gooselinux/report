@@ -1,0 +1,40 @@
+diff --git a/python/report/io/GTKIO.py b/python/report/io/GTKIO.py
+index f71e9d1..f177b2c 100644
+--- a/python/report/io/GTKIO.py
++++ b/python/report/io/GTKIO.py
+@@ -23,6 +23,7 @@
+ from report import _report as _
+ import report.accountmanager
+ import os
++import gio
+ if 'DISPLAY' in os.environ and len(os.environ["DISPLAY"]) > 0: 
+     import gtk
+ 
+@@ -242,14 +243,20 @@ class SuccessDialog():
+         dlg.set_title(title)
+         dlg.set_position(gtk.WIN_POS_CENTER)
+ 
+-        # if actual, create link
++        make_link = False
+         if actualURL:
+-            linkbutton = gtk.LinkButton(actualURL,displayURL)
+-            dlg.vbox.pack_start(linkbutton, True, True, 0)
+-        # if just display, create label
+-        elif displayURL:
+-            label = gtk.Label(displayURL)
+-            dlg.vbox.pack_start(label, True, True, 0)
++            scheme = actualURL.partition(':')[0]
++            if scheme and gio.app_info_get_default_for_uri_scheme(scheme):
++                make_link = True
++
++        if make_link:
++            dlg.vbox.pack_start(gtk.LinkButton(actualURL,displayURL), 
++                                True, True, 0)
++
++        else:
++            dlg.vbox.pack_start(gtk.Label(displayURL), True, True, 0)
++            if actualURL and actualURL != displayURL:
++                dlg.vbox.pack_start(gtk.Label(actualURL), True, True, 0)
+ 
+         dlg.show_all()
+         dlg.run()

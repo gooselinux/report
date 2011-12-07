@@ -1,0 +1,33 @@
+
+Include the ftp target and plugin in all installs (RHEL 614094)
+
+diff --git a/etc/report.d/RHEL.conf b/etc/report.d/RHEL.conf
+index 5de246f..8d0b4ff 100644
+--- a/etc/report.d/RHEL.conf
++++ b/etc/report.d/RHEL.conf
+@@ -17,3 +17,12 @@ buttonURLRepl = access.redhat.com/support
+ # if not set, strata_host defaults to a host set in the strata plugin 
+ #strata_host = example.com:8080
+ #strata_host = access.redhat.com
++
++
++[FTP to dropbox.redhat.com]
++plugin=ftp
++description="Plugin to send file to ftp"
++
++# urldir is the directory that the report should be uploaded to
++#  it must be formatted as a URL, and must be a directory 
++urldir=ftp://dropbox.redhat.com/incoming
+diff --git a/report.spec.in b/report.spec.in
+index 217a2d3..879c5d2 100644
+--- a/report.spec.in
++++ b/report.spec.in
+@@ -100,7 +100,7 @@ BuildRequires: curl-devel
+ BuildRequires: libcurl-devel
+ %endif  
+ 
+-Requires: openssl report-config-scp report-config-localsave
++Requires: openssl report-config-scp report-config-localsave report-config-ftp 
+ Requires: libcurl
+ Requires: libxml2
+ 

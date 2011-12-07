@@ -1,0 +1,380 @@
+diff --git a/strata_client/strata_client_lib.c b/strata_client/strata_client_lib.c
+index 093705d..3d23050 100644
+--- a/strata_client/strata_client_lib.c
++++ b/strata_client/strata_client_lib.c
+@@ -14,6 +14,8 @@
+ 
+ #include <libxml/encoding.h>
+ #include <libxml/xmlwriter.h>
++#include <libxml/HTMLparser.h>
++#include <libxml/HTMLtree.h>
+ #include <curl/curl.h>
+ 
+ #include "strata_client.h"
+@@ -31,7 +33,7 @@ static char*
+ ssprintf( const char* format, ... ) {
+   int r;
+   va_list p;
+-  char* retval;
++  char* retval = NULL;
+ 
+   va_start(p, format);
+   r = vasprintf(&retval, format, p);
+@@ -64,6 +66,38 @@ internal_error_printf( const char* format, ... ) {
+ }
+ 
+ static int 
++acat_mem(const char** oldp, const void* add, int add_len) {
++
++  if (!add_len) return 0;
++
++  const char* old = *oldp;
++  int old_len = old ? strlen(old) : 0;
++
++  int newstr_len = old_len + add_len;
++  char* newstr = (char*)malloc(newstr_len+1);
++
++  if (!newstr) {
++    internal_error_printf("malloc failed");
++    return 1;
++  }
++
++  mempcpy(mempcpy(newstr,old,old_len),add,add_len);
++  newstr[newstr_len] = 0;
++
++  free((void*)old);
++  *oldp = newstr;
++  return 0;
++}
++
++static int 
++acat_str(const char** oldp, const char* add) {
++
++  int add_len = add ? strlen(add) : 0;
++  if (!add_len) return 0;
++  return acat_mem(oldp, add, add_len);
++}
++
++static int 
+ run_command( const char *cmd )
+ {
+     int retcode = system(cmd);
+@@ -574,6 +608,7 @@ typedef struct response_data {
+   const char* location;
+   const char* strata_message;
+   const char* http_header;
++  const char* content_type;
+   char* body;
+   size_t body_size;
+ } response_data_t;
+@@ -582,6 +617,7 @@ static void
+ response_data_free(const response_data_t* response_data) {
+   free((void*)response_data->http_header);
+   free((void*)response_data->strata_message);
++  free((void*)response_data->content_type);
+   free((void*)response_data->body);
+   free((void*)response_data->location);
+   free((void *)response_data);
+@@ -653,6 +689,31 @@ headerfunction(void *buffer_pv, size_t count, size_t nmemb, void *response_data_
+     }
+   }
+ 
++  const char content_type_key[] = "Content-Type:";
++  const size_t content_type_key_size = sizeof(content_type_key)-1;
++
++  if (size >= (content_type_key_size+2)
++      && 0 == memcmp(buffer,content_type_key,content_type_key_size)) {
++    const char* tmp_msg = (const char*) buffer+content_type_key_size;
++    const char* tmp_last = (const char*) buffer+size-2;  // trim trailing \r\n
++
++    while (tmp_msg < tmp_last && isspace(*tmp_msg)) 
++      tmp_msg++;
++
++    const char* tmp_end = tmp_msg;
++    while (tmp_end < tmp_last
++	   && !(isspace(*tmp_end) || ((*tmp_end) == ';')))
++      tmp_end++;
++
++    size_t tmp_msg_len = tmp_end - tmp_msg;
++
++    if (tmp_msg_len) {
++      if (response_data->content_type)
++	acat_mem(&response_data->content_type, " ", 1);
++      acat_mem(&response_data->content_type, tmp_msg, tmp_msg_len);
++    }
++  }
++
+   const char http_header_key[] = "HTTP/";
+   const size_t http_header_key_size = sizeof(http_header_key)-1;
+ 
+@@ -711,6 +772,17 @@ append_accept_language_header(struct curl_slist ** httpheader_list_ptr) {
+   return 0;
+ }
+   
++static int
++append_accept_header(struct curl_slist ** httpheader_list_ptr) {
++  // append the header to the header list
++  char* header = strdup("Accept: text/plain");
++  if (!header)
++    return -1;
++  *httpheader_list_ptr = curl_slist_append(*httpheader_list_ptr, header);
++
++  free(header);
++  return 0;
++}
+ 
+   
+     
+@@ -877,6 +949,9 @@ post(const char* URL,
+   rc = append_accept_language_header(&httpheader_list);
+   if (rc) return NULL;
+ 
++  rc = append_accept_header(&httpheader_list);
++  if (rc) return NULL;
++
+   curl_easy_setopt(handle, CURLOPT_HTTPHEADER, httpheader_list);
+ 
+ 
+@@ -1190,6 +1265,217 @@ make_response_xml(const char* title, const char* body,
+   return retval;
+ }
+ 
++static int
++acat_xml_as_form(const char** oldp, int indent, xmlNode * a_node) {
++  xmlNode* cur_node;
++  int x;
++
++  if (a_node->type == XML_ELEMENT_NODE) {
++    if (a_node->name) {
++      if (acat_str(oldp, "\n")) return 1;
++      for (x = 0; x < indent; x++) if (acat_str(oldp, " ")) return 1;
++      if (acat_str(oldp, a_node->name)) return 1;
++      if (acat_str(oldp, ": ")) return 1;
++      indent += 2;
++    }
++    for (cur_node = a_node->children; cur_node; cur_node = cur_node->next)
++      if (acat_xml_as_form(oldp, indent, cur_node)) return 1;
++  }
++  else if (a_node->type == XML_TEXT_NODE
++	   || a_node->type == XML_CDATA_SECTION_NODE) { 
++    if (a_node->content) {
++      int len = strlen(a_node->content);
++      
++      const char* start = a_node->content;
++      const char* end = a_node->content + len;
++      while (start < end && isspace(*start)) start++;
++      while (start < (end-1) && isspace(*(end-1))) end--;
++      if (acat_mem(oldp, start, end-start))
++	return 1;
++    }
++    for (cur_node = a_node->children; cur_node; cur_node = cur_node->next)
++      if (acat_xml_as_form(oldp, indent, cur_node)) return 1;
++  }
++  else {
++    for (cur_node = a_node->children; cur_node; cur_node = cur_node->next)
++      if (acat_xml_as_form(oldp, indent, cur_node)) return 1;
++  }
++
++  return 0;
++}
++
++static int
++acat_html_list_as_text(const char** oldp, xmlNode* list) {
++  xmlNode *cur_node = NULL;
++
++  for (cur_node = list; cur_node; cur_node = cur_node->next) {
++    if (cur_node->type == XML_ELEMENT_NODE) {
++      if (!strcmp(cur_node->name,"p")
++	  || !strcmp(cur_node->name,"div")) {
++	if (acat_str(oldp, "\n")) return 1;
++	if (cur_node->children) 
++	  if (acat_html_list_as_text(oldp, cur_node->children))
++	    return 1;
++      } 
++      else if (!strcmp(cur_node->name,"h1")
++	       || !strcmp(cur_node->name,"h2")
++	       || !strcmp(cur_node->name,"h3")
++	       || !strcmp(cur_node->name,"h4")
++	       || !strcmp(cur_node->name,"h5")) {
++	if (acat_str(oldp, "\n")) return 1;
++	if (cur_node->children) {
++	  if (acat_html_list_as_text(oldp, cur_node->children))
++	    return 1;
++	  if (acat_str(oldp, "\n")) return 1;
++	}
++      }
++      else {	
++	if (cur_node->children) 
++	  if (acat_html_list_as_text(oldp, cur_node->children))
++	    return 1;
++      }
++    }
++    else if (cur_node->type == XML_TEXT_NODE
++	     || cur_node->type == XML_CDATA_SECTION_NODE) {
++      if (acat_str(oldp, cur_node->content)) return 1;
++      if (cur_node->children) 
++	if (acat_html_list_as_text(oldp, cur_node->children))
++	  return 1;
++    }
++    else {
++      if (cur_node->children) 
++	if (acat_html_list_as_text(oldp, cur_node->children))
++	  return 1;
++    }
++  }
++  return 0;
++}
++
++static const char*
++translate_body(response_data_t* response_data) {
++
++  if (response_data->content_type
++      && strlen(response_data->content_type)) {
++    if (!strcmp(response_data->content_type,"text/plain")) {
++      return strdup(response_data->body);
++    }
++    else if (!strcmp(response_data->content_type,"text/xml")) {
++      const char *p;
++      const char *p_end = response_data->body + strlen(response_data->body);
++      for (p = response_data->body; 
++	   p < p_end && isspace(*p); 
++	   p++);
++      if (*p != '<') {
++	return ssprintf("Content of type %s did not start with '<':\n%s",
++			response_data->content_type,
++			response_data->body);
++      }
++
++      xmlDocPtr doc = xmlParseMemory(response_data->body,
++				     strlen(response_data->body));
++      if (!doc) {
++	xmlCleanupParser();
++	return ssprintf("Could not parse content of type %s as XML: \n"
++		       "%s", 
++		       response_data->content_type,
++		       response_data->body);
++      }
++
++      const char* fmt = NULL;
++      if (acat_xml_as_form(&fmt, 0, xmlDocGetRootElement(doc))) {
++	xmlFreeDoc(doc);
++	xmlCleanupParser();
++	free((void*)fmt);
++	return NULL;
++      }
++      xmlFreeDoc(doc);
++      xmlCleanupParser();
++      if (!fmt)
++	return ssprintf("Could not translate content type of '%s' to text:\n%s",
++			response_data->content_type, response_data->body);
++      const char* rtn = ssprintf(
++			 "Translated '%s' response to text:\n%s\n"
++		         "Original response of content type %s:\n%s",
++			 response_data->content_type, fmt, 
++			 response_data->content_type, response_data->body);
++      free((void*)fmt);
++      return rtn;
++    }
++    else if (!strcmp(response_data->content_type,"text/html")) {
++      const char *p;
++      const char *p_end = response_data->body + strlen(response_data->body);
++      for (p = response_data->body; 
++	   p < p_end && isspace(*p); 
++	   p++);
++      if (*p != '<') {
++	return ssprintf("Content of type '%s' did not start with '<':\n%s",
++			response_data->content_type,
++			response_data->body);
++      }
++
++      xmlDocPtr doc = htmlReadMemory(response_data->body,
++				     strlen(response_data->body),
++				     NULL, NULL, 0);
++      if (!doc) {
++	xmlCleanupParser();
++	return ssprintf("Could not parse content of type '%s' as HTML: \n"
++			"%s", 
++			response_data->content_type,
++			response_data->body);
++      }
++      const char* fmt = NULL;
++      xmlNode *cur_node = NULL;
++
++      for (cur_node = xmlDocGetRootElement(doc)->children; 
++	   cur_node; 
++	   cur_node = cur_node->next) {
++	if (cur_node->type == XML_ELEMENT_NODE 
++	    && !strcmp(cur_node->name,"body")) {
++	  if (acat_html_list_as_text(&fmt, cur_node->children)) {
++	    xmlFreeDoc(doc);
++	    xmlCleanupParser();
++	    free((void*)fmt);
++	    return NULL;
++	  }
++	}
++      }
++      xmlFreeDoc(doc);
++      xmlCleanupParser();
++      if (!fmt) 
++	return ssprintf("Could not translate content type of '%s' to text:\n%s",
++			response_data->content_type, response_data->body);
++      const char* rtn = ssprintf(
++                          "Translated '%s' response to text:\n%s\n"
++			  "Original response of content type %s:\n%s",
++			  response_data->content_type, fmt, 
++			  response_data->content_type, response_data->body);
++      free((void*)fmt);
++      return rtn;
++    }
++    else {
++      const char* rtn;
++      if (!strcmp(response_data->content_type,"text")
++	  || !strncmp(response_data->content_type,"text/",strlen("text/"))) {
++	rtn = ssprintf("Server returned unexpected content type '%s':\n%s",
++		       response_data->content_type, response_data->body);
++      } 
++      else {
++	rtn = ssprintf("Server returned unexpected content type '%s'",
++		       response_data->content_type);
++      }
++
++      return rtn;
++    }
++  }
++  else {
++    const char* rtn = 
++      ssprintf("Server returned content with no content type header:\n%s",
++	       response_data->body);
++    return rtn;
++  }
++}
++
++
+ static const char*
+ append_http_response_message(const char* body, 
+                              response_data_t* response_data) {
+@@ -1312,7 +1598,7 @@ append_response_message(const char* body,
+                         const char* action, 
+                         response_data_t* response_data) {
+   int header_added = 0;  
+- 
++  
+   if (! (response_data->code == 200 
+          || response_data->code == 201)) {
+     if (!header_added) {
+@@ -1344,10 +1630,14 @@ append_response_message(const char* body,
+       header_added = 1;
+     }
+ 
++    const char* translated_body = translate_body(response_data);
++    if (!translated_body) return NULL;
++
+     const char* new_body = ssprintf("%s%s%s",
+                                     body,
+                                     (*body ? "\n" : ""), 
+-                                    response_data->body);
++                                    translated_body);
++    free((char*)translated_body);
+     if (!new_body) return NULL;
+     if (new_body != body) {
+       free((char*)body);

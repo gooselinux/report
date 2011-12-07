@@ -1,0 +1,14 @@
+This fixes a crash in the FTP plugin.
+
+
+Index: python/report/plugins/ftp/__init__.py
+===================================================================
+--- python/report/plugins/ftp/__init__.py (revision a2b61a176db0ce890137a7590e96bec243731418)
++++ python/report/plugins/ftp/__init__.py (revision 4c514144f4df6dc3e1dad5ca678dcf4ab8919f1f)
+@@ -66,4 +66,6 @@
+     else:
+         ftpserver = io.queryField(_("Enter remote FTP directory as URL"))
++        if ftpserver is None:
++            return None
+ 
+     if not ftpserver.startswith("ftp://"):

@@ -1,0 +1,139 @@
+diff --git a/strata_client/strata_client_lib.c b/strata_client/strata_client_lib.c
+index 3d23050..13241b7 100644
+--- a/strata_client/strata_client_lib.c
++++ b/strata_client/strata_client_lib.c
+@@ -659,7 +659,10 @@ headerfunction(void *buffer_pv, size_t count, size_t nmemb, void *response_data_
+   const char strata_message_key[] = "Strata-Message:";
+   const size_t strata_message_key_size = sizeof(strata_message_key)-1;
+ 
+-  if (size >= strata_message_key_size
++  // We are going to stop using strata_message, 
++  //   but for now only do minimal changes to stop using them
++  if (0 
++      && size >= strata_message_key_size
+       && 0 == memcmp(buffer,strata_message_key,strata_message_key_size)) {
+     const char* tmp_msg = (const char*) buffer+strata_message_key_size;
+     const char* tmp_end = (const char*) buffer+size-2;  // trim trailing \r\n
+@@ -1595,12 +1598,18 @@ append_response_header(const char* body, const char* action) {
+ 
+ static const char*
+ append_response_message(const char* body, 
++                        const int header_needed,
+                         const char* action, 
+                         response_data_t* response_data) {
+-  int header_added = 0;  
++
++  // a header is only needed if we are combining responses for two POSTS
++  int header_added = ! header_needed;  
+   
++  // For 200 or 201 we only print the body (the content of the response)
++  // For 400 <= x < 500 we print the header after the body
+   if (! (response_data->code == 200 
+-         || response_data->code == 201)) {
++         || response_data->code == 201
++         || (400 <= response_data->code && response_data->code < 500))) {
+     if (!header_added) {
+       body = append_response_header(body, action);
+       if (!body) return NULL;
+@@ -1609,7 +1618,9 @@ append_response_message(const char* body,
+     body = append_http_response_message(body, response_data);
+     if (!body) return NULL;
+     
+-    if (response_data->strata_message) {
++    // We are going to stop using strata_message, 
++    //   but for now only do minimal changes to stop using them
++    if (0 && response_data->strata_message) {
+       const char* new_body = ssprintf("%s%sStrata Server Message: %s",
+                                       body,
+                                       (*body ? "\n" : ""), 
+@@ -1658,6 +1669,11 @@ make_response(const char* action1,
+   const char* body;
+   const char* title;
+ 
++  // It has been suggested that we should not output internal
++  // headers, even for cases where there are two requests
++  // Leave the code till we are sure one way or another.
++  int header_needed = 0;  // (second_response != NULL);
++ 
+   if (200 <= first_response->code
+       && first_response->code < 300)
+     title = ssprintf("%s Succeeded", action1);
+@@ -1668,34 +1684,64 @@ make_response(const char* action1,
+ 
+   body = strdup("");
+ 
+-  body = append_response_message(body, action1, first_response);
++  body = append_response_message(body, header_needed,
++				 action1, first_response);
+   if (!body) return NULL;
+   
+   if (second_response) {
+-    const char* new_title;
+-
+-    if (200 <= second_response->code
+-        && second_response->code < 300)
+-      new_title = ssprintf("%s; %s Succeeded", title, action2);
+-    else 
+-      new_title = ssprintf("%s; %s Failed", title, action2);
+-
+-    if (!new_title) return NULL;
+-    if (new_title != title) {
+-      free((char*)title);
+-      title = new_title;
++    // It has been suggested that we should only talk about 
++    // the first response title.
++    // Leave the code till we are sure one way or another.
++    if (0) {
++      const char* new_title;
++
++      if (200 <= second_response->code
++	  && second_response->code < 300)
++	new_title = ssprintf("%s; %s Succeeded", title, action2);
++      else 
++	new_title = ssprintf("%s; %s Failed", title, action2);
++
++      if (!new_title) return NULL;
++      if (new_title != title) {
++	free((char*)title);
++	title = new_title;
++      }
+     }
+ 
+-    body = append_response_message(body, action2, second_response);
++    body = append_response_message(body, header_needed,
++				   action2, second_response);
+     if (!body) return NULL;
+   }
+ 
++  // if we have been successful, append the 'name' of the POST-ed
++  // thing to the passed in display_url; where we define 'name' as
++  // the string after the last '/' in the actual URL
++
++  const char* displayURL = NULL;
++  if (first_response->location 
++      && strlen( first_response->location )) {
++    const char* start = first_response->location;
++    const char* end = start + strlen(start);
++    while (start < end && *(end-1) == '/')
++      end--;
++    const char* p = end;
++    while (start < p && *(p-1) != '/')
++      p--;
++    if (start < p && p < end) {
++      if (acat_str(&displayURL, display_url)) return NULL;
++      if (acat_str(&displayURL, " ")) return NULL;
++      if (acat_mem(&displayURL, p, end - p)) return NULL;
++      display_url = displayURL;
++    }
++  }
++
+   retval = make_response_xml(title, body,
+                              first_response->location,
+                              (first_response->location ?
+                               display_url : NULL));
+   if (!retval) return NULL;
+ 
++  free((char*)displayURL);
+   free((char*)body);
+   free((char*)title);
+   return retval;

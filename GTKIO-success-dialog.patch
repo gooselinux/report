@@ -1,0 +1,16 @@
+diff --git a/python/report/io/GTKIO.py b/python/report/io/GTKIO.py
+index f177b2c..953aa49 100644
+--- a/python/report/io/GTKIO.py
++++ b/python/report/io/GTKIO.py
+@@ -250,8 +250,9 @@ class SuccessDialog():
+                 make_link = True
+ 
+         if make_link:
+-            dlg.vbox.pack_start(gtk.LinkButton(actualURL,displayURL), 
+-                                True, True, 0)
++            dlg.vbox.pack_start(
++                gtk.LinkButton(actualURL, _("View %s") % displayURL), 
++                True, True, 0)
+ 
+         else:
+             dlg.vbox.pack_start(gtk.Label(displayURL), True, True, 0)

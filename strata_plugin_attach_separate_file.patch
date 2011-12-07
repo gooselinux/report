@@ -1,0 +1,145 @@
+diff --git a/python/report/plugins/strata/__init__.py b/python/report/plugins/strata/__init__.py
+index d0c8993..450a593 100644
+--- a/python/report/plugins/strata/__init__.py
++++ b/python/report/plugins/strata/__init__.py
+@@ -61,14 +61,22 @@ def report(signature, io, optionsDict):
+         DisplayFailMessage(None, _("No IO"),
+                            _("No io provided."))
+         return False
+-    
+-    fileName = reportmodule.serializeAsReport(signature)
+ 
+-    if fileName is None:
+-        return None
++    filename_list = []
++    if signature.has_key("simpleFile"):
++        filename_list.append(signature["simpleFile"].asFileName())
+ 
+-    elif fileName is False:
+-        return False
++    else:
++        filename = reportmodule.serializeAsSignature(signature)
++        if filename is None:
++            return None
++        elif filename is False:
++            return False
++
++        filename_list.append(filename)
++        for (key,value) in signature.iteritems():
++            if value.isBinary:
++                filename_list.append(value.asFileName())
+ 
+     if 'component' in signature:
+         component = signature['component'].asString()
+@@ -94,8 +102,6 @@ def report(signature, io, optionsDict):
+     if not description:
+         description = summary
+ 
+-    rpt = fileName
+-
+     choice_attach = 4
+     choice_new = 5
+     if 'ticket' in optionsDict:
+@@ -141,6 +147,27 @@ def report(signature, io, optionsDict):
+         else:
+             version = release_information.getVersion()
+ 
++
++        # 
++        # FIXME:
++        #   In the case of a simpleFile report, when it is forwarded
++        #   from one machine to another, it looses it's 'product' and
++        #   'version' information.  So for these cases, whatever 
++        #   information we got is possibly bad.  So make it good.
++        # 
++        #   The first fix needed here is to get good_xxx information
++        #   from the server.  The second fix is to allow someone
++        #   to fix bad information with good.  The third fix needed
++        #   is to correct the simpleFile problem.
++        #   
++        if signature.has_key("simpleFile"):
++            good_products = ['Red Hat Enterprise Linux']
++            good_versions = ['6']
++            if len(good_products) > 0 and product not in good_products:
++                product = good_products[0]
++            if len(good_versions) > 0 and version not in good_versions:
++                version = good_versions[0]
++
+         response = send_report_to_new_case(URL,
+                                            cert_data,
+                                            loginResult['username'], 
+@@ -149,7 +176,7 @@ def report(signature, io, optionsDict):
+                                            component, 
+                                            product,
+                                            version,
+-                                           rpt)
++                                           filename_list[0])
+         if not response:
+             DisplayFailMessage(io, _("Case Creation Failed"), strata_client_strerror())
+             return False
+@@ -158,6 +185,7 @@ def report(signature, io, optionsDict):
+         body = _("Case Creation Succeeded")
+         displayURL = ""
+         actualURL = ""
++        case_number = ""
+ 
+     elif choice == choice_attach:
+         if 'ticket' in optionsDict:
+@@ -172,7 +200,7 @@ def report(signature, io, optionsDict):
+                                                 cert_data,
+                                                 loginResult['username'], 
+                                                 loginResult['password'],
+-                                                case_number, rpt)
++                                                case_number, filename_list[0])
+         
+         if not response:
+             DisplayFailMessage(io, _("Report Attachement Failed"), strata_client_strerror())
+@@ -204,6 +232,48 @@ def report(signature, io, optionsDict):
+     else:
+         body = response
+ 
++    if len(filename_list) > 1 and not case_number and actualURL:
++        leading = actualURL
++        sep = '/'
++        trailing = ''
++        while leading and sep and not trailing:
++            (leading,sep,trailing) = leading.rpartition('/')
++        if trailing:
++            case_number = trailing
++
++    if case_number and len(filename_list) > 1:
++        for filename in filename_list[1:]:
++            response = send_report_to_existing_case(URL,
++                                                    cert_data,
++                                                    loginResult['username'], 
++                                                    loginResult['password'],
++                                                    case_number, 
++                                                    filename);
++        
++            if response:
++                try:
++                    xml = etree.XML(response)
++                except Exception,e:
++                    xml = None
++
++                if xml:
++                    for each in xml:
++                        if each.tag == "title" and each.text:
++                            if title:
++                                title += "; " + each.text
++                            else:
++                                title = each.title
++                        elif each.tag == "body" and each.text:
++                            if body:
++                                body += '\n' + each.text
++                            else: 
++                                body = each.text
++                else:
++                    if body:
++                        body += '\n' + response
++                    else: 
++                        body = response
++
+     if 'buttonURLPattern' in optionsDict:
+         buttonURLPattern = optionsDict['buttonURLPattern']
+     else:

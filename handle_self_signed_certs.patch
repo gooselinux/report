@@ -1,0 +1,356 @@
+diff --git a/etc/report.d/strata-test.conf b/etc/report.d/strata-test.conf
+index 9446b9e..7150049 100644
+--- a/etc/report.d/strata-test.conf
++++ b/etc/report.d/strata-test.conf
+@@ -5,7 +5,9 @@ plugin=strata
+ 
+ # strataURL is the base URL of the Strata server
+ #   if not set, strataURL defaults to http://<strata_host>/Strata
+-strataURL = http://support-services-devel.gss.redhat.com:8080/Strata
++strataURL = https://api.avalon-ci.gss.redhat.com/rs
++
++sslcertdata = INSECURE
+ 
+ # if strataURL is not set, strata_host can be, and is used to 
+ #    create the default strataURL
+diff --git a/python/report/plugins/strata/__init__.py b/python/report/plugins/strata/__init__.py
+index e1f829b..d0c8993 100644
+--- a/python/report/plugins/strata/__init__.py
++++ b/python/report/plugins/strata/__init__.py
+@@ -113,6 +113,10 @@ def report(signature, io, optionsDict):
+ 
+ 
+     URL = strataURL(optionsDict)
++    cert_data = None
++
++    if 'sslcertdata' in optionsDict:
++        cert_data = optionsDict['sslcertdata']
+ 
+     strata_host = os.path.basename(os.path.dirname(URL))
+     loginResult = io.queryLogin(strata_host)
+@@ -137,7 +141,8 @@ def report(signature, io, optionsDict):
+         else:
+             version = release_information.getVersion()
+ 
+-        response = send_report_to_new_case(URL, 
++        response = send_report_to_new_case(URL,
++                                           cert_data,
+                                            loginResult['username'], 
+                                            loginResult['password'], 
+                                            summary, description, 
+@@ -163,7 +168,8 @@ def report(signature, io, optionsDict):
+             if case_number is None:
+                 return None
+ 
+-        response = send_report_to_existing_case(URL, 
++        response = send_report_to_existing_case(URL,
++                                                cert_data,
+                                                 loginResult['username'], 
+                                                 loginResult['password'],
+                                                 case_number, rpt)
+diff --git a/python/report/plugins/strata/strata.py b/python/report/plugins/strata/strata.py
+index 8084da3..e6d9ca9 100644
+--- a/python/report/plugins/strata/strata.py
++++ b/python/report/plugins/strata/strata.py
+@@ -7,11 +7,11 @@ post_signature.argtypes = [ c_char_p, c_char_p, c_char_p, c_char_p ]
+ post_signature.restype = c_char_p
+ 
+ send_report_to_new_case = strata_client_lib.send_report_to_new_case
+-send_report_to_new_case.argtypes = [ c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p ]
++send_report_to_new_case.argtypes = [ c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p ]
+ send_report_to_new_case.restype = c_char_p
+ 
+ send_report_to_existing_case = strata_client_lib.send_report_to_existing_case
+-send_report_to_existing_case.argtypes = [ c_char_p, c_char_p, c_char_p, c_char_p, c_char_p ]
++send_report_to_existing_case.argtypes = [ c_char_p, c_char_p, c_char_p, c_char_p, c_char_p, c_char_p ]
+ send_report_to_existing_case.restype = c_char_p
+ 
+ strata_client_strerror = strata_client_lib.strata_client_strerror
+diff --git a/strata_client/c_strata_client_error.c b/strata_client/c_strata_client_error.c
+index 7207379..edd96ae 100644
+--- a/strata_client/c_strata_client_error.c
++++ b/strata_client/c_strata_client_error.c
+@@ -19,7 +19,7 @@ main(int argc, char** argv) {
+   const char* p;
+ 
+   printf("\npost_signature(slightly_bad_signature):\n");
+-  p = post_signature(baseURL, "dummyUser", "dummyPass", slightly_bad_signature);
++  p = post_signature(baseURL, NULL, "dummyUser", "dummyPass", slightly_bad_signature);
+   if (p) {
+     printf("%s\n", p );
+     free((void*)p);
+@@ -30,7 +30,7 @@ main(int argc, char** argv) {
+   }
+ 
+   printf("\npost_signature(very_bad_signature):\n");
+-  p = post_signature(baseURL, "dummyUser", "dummyPass", very_bad_signature);
++  p = post_signature(baseURL, NULL, "dummyUser", "dummyPass", very_bad_signature);
+   if (p) {
+     printf("%s\n", p );
+     free((void*)p);
+@@ -41,7 +41,7 @@ main(int argc, char** argv) {
+   }
+ 
+   printf("\npost_signature(BADURL,dummy_signature):\n");
+-  p = post_signature("http://support-services-devel.gss.redhat.com:8080/Strata/bad", "dummyUser", "dummyPass", dummy_signature);
++  p = post_signature("http://support-services-devel.gss.redhat.com:8080/Strata/bad", NULL, "dummyUser", "dummyPass", dummy_signature);
+   if (p) {
+     printf("%s\n", p );
+     free((void*)p);
+@@ -52,7 +52,7 @@ main(int argc, char** argv) {
+   }
+   
+   printf("\npost_signature(VERYBADURL, dummy_signature):\n");
+-  p = post_signature("http://no.place.like.home/Strata", "dummyUser", "dummyPass", dummy_signature);
++  p = post_signature("http://no.place.like.home/Strata", NULL, "dummyUser", "dummyPass", dummy_signature);
+   if (p) {
+     printf("%s\n", p );
+     free((void*)p);
+diff --git a/strata_client/c_strata_client_test.c b/strata_client/c_strata_client_test.c
+index d753140..76c8467 100644
+--- a/strata_client/c_strata_client_test.c
++++ b/strata_client/c_strata_client_test.c
+@@ -51,7 +51,7 @@ main(int argc, char** argv) {
+   const char* p;
+ 
+   printf("\npost_signature(signature):\n");
+-  p = post_signature(baseURL, "dummyUser", "dummyPassword", signature);
++  p = post_signature(baseURL, NULL, "dummyUser", "dummyPassword", signature);
+   if (p) {
+     printf("%s\n", p );
+     free((void*)signature);
+@@ -63,7 +63,7 @@ main(int argc, char** argv) {
+   }
+ 
+   printf("\ncreate_case(dummy_summary, dummy_description, sealert-report.xml):\n");
+-  p = send_report_to_new_case(baseURL, "dummyUser", "dummyPassword", "c_strata_client_created test case summary", "c_strata_client_created test case description", "c_strata_client_created test case component", "Red Hat Enterprise Linux", "6.0", "sealert-report.xml");
++  p = send_report_to_new_case(baseURL, NULL, "dummyUser", "dummyPassword", "c_strata_client_created test case summary", "c_strata_client_created test case description", "c_strata_client_created test case component", "Red Hat Enterprise Linux", "6.0", "sealert-report.xml");
+   if (p) {
+     printf("%s\n", p );
+     free((void*)p);
+diff --git a/strata_client/strata_client.h b/strata_client/strata_client.h
+index 191f92c..a054b43 100644
+--- a/strata_client/strata_client.h
++++ b/strata_client/strata_client.h
+@@ -31,10 +31,12 @@ int reportfile_free( reportfile_t* _file );
+ 
+ 
+ const char* post_signature( const char* baseURL, 
++			    const char* _cert_data,
+                             const char* _username,
+                             const char* _password,
+                             const char* _signature );
+ const char* send_report_to_new_case( const char* baseURL,
++				     const char* _cert_data,
+                                      const char* _username,
+                                      const char* _password,
+                                      const char* _summary, 
+@@ -44,6 +46,7 @@ const char* send_report_to_new_case( const char* baseURL,
+                                      const char* _version, 
+                                      const char* _report_file_name );
+ const char* send_report_to_existing_case( const char* baseURL, 
++					  const char* _cert_data,
+                                           const char* _username,
+                                           const char* _password,
+                                           const char* _case_name, 
+diff --git a/strata_client/strata_client_lib.c b/strata_client/strata_client_lib.c
+index b3a9a65..093705d 100644
+--- a/strata_client/strata_client_lib.c
++++ b/strata_client/strata_client_lib.c
+@@ -732,7 +732,8 @@ append_accept_language_header(struct curl_slist ** httpheader_list_ptr) {
+ 
+ 
+ static response_data_t* 
+-post(const char* URL, 
++post(const char* URL,
++     const char* cert_data,
+      const char* username,
+      const char* password,
+      const char* content_type,
+@@ -800,7 +801,22 @@ post(const char* URL,
+     }
+ #endif
+   }
+-  
++
++  if (cert_data) {
++    if (!strcmp(cert_data,"INSECURE")) {
++      rc = curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 0);
++      if (rc) {
++	internal_error_curl(rc, "problem", "curl_easy_setopt(CURLOPT_SSL_VERIFYPEER)");
++	return NULL;
++      }
++      rc = curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, 0);
++      if (rc) {
++	internal_error_curl(rc, "problem", "curl_easy_setopt(CURLOPT_SSL_VERIFYHOST)");
++	return NULL;
++      }
++    }
++  }
++
+   FILE* data_file = 0;
+   struct curl_httppost* post = NULL;  
+   struct curl_httppost* last = NULL;  
+@@ -906,15 +922,17 @@ post(const char* URL,
+ 
+ static response_data_t* 
+ post_string(const char* URL,
++	    const char* cert_data,
+             const char* username,
+             const char* password,
+             const char* content_type,
+             const char* str) {
+-  return post(URL, username, password, content_type, str, -1);
++  return post(URL, cert_data, username, password, content_type, str, -1);
+ }
+ 
+ static response_data_t* 
+ post_memory(const char* URL,
++	    const char* cert_data,
+             const char* username,
+             const char* password,
+             const char* content_type,
+@@ -923,6 +941,7 @@ post_memory(const char* URL,
+   __attribute__ ((unused));
+ static response_data_t* 
+ post_memory(const char* URL,
++	    const char* cert_data,
+             const char* username,
+             const char* password,
+             const char* content_type,
+@@ -933,11 +952,13 @@ post_memory(const char* URL,
+     return NULL;
+   }
+ 
+-  return post(URL, username, password, content_type, data, data_size);
++  return post(URL, cert_data, 
++	      username, password, content_type, data, data_size);
+ }
+ 
+ static response_data_t* 
+ post_namedfile(const char* URL,
++	       const char* cert_data,
+                const char* username,
+                const char* password,
+                const char* content_type,
+@@ -945,20 +966,22 @@ post_namedfile(const char* URL,
+   __attribute__ ((unused));
+ static response_data_t* 
+ post_namedfile(const char* URL,
++	       const char* cert_data,
+                const char* username,
+                const char* password,
+                const char* content_type,
+                const char* namedfile) {
+-  return post(URL, username, password, content_type, namedfile, -2);
++  return post(URL, cert_data, username, password, content_type, namedfile, -2);
+ }
+ 
+ static response_data_t* 
+ postform_namedfile(const char* URL,
++		   const char* cert_data,
+                    const char* username,
+                    const char* password,
+                    const char* content_type,
+                    const char* namedfile) {
+-  return post(URL, username, password, content_type, namedfile, -3);
++  return post(URL, cert_data, username, password, content_type, namedfile, -3);
+ }
+ 
+ 
+@@ -1390,6 +1413,7 @@ make_response(const char* action1,
+ 
+ static response_data_t* 
+ attach_file_to_case( const char* baseURL,
++		     const char* cert_data,
+                      const char* username,
+                      const char* password,
+                      const char* case_name,
+@@ -1420,7 +1444,7 @@ attach_file_to_case( const char* baseURL,
+   int redirect_attach_count = 0;
+  redirect_attach:;
+   response_data_t* attach_response = 
+-    postform_namedfile(attachURL, 
++    postform_namedfile(attachURL, cert_data,
+                        username, password,
+                        "application/binary", 
+                        report_file_name);
+@@ -1444,7 +1468,8 @@ attach_file_to_case( const char* baseURL,
+ }
+ 
+ const char* 
+-post_signature(const char* baseURL, 
++post_signature(const char* baseURL,
++	       const char* cert_data,
+                const char* username,
+                const char* password,
+                const char* signature) {
+@@ -1452,7 +1477,7 @@ post_signature(const char* baseURL,
+ 
+   int redirect_signature_count = 0;
+  redirect_signature:;
+-  response_data_t* response_data = post_string(URL,
++  response_data_t* response_data = post_string(URL, cert_data,
+                                                username,
+                                                password,
+                                                "application/xml",
+@@ -1505,6 +1530,7 @@ post_signature(const char* baseURL,
+ 
+ response_data_t* 
+ create_case(const char* baseURL,
++	    const char* cert_data,
+             const char* username,
+             const char* password,
+             const char* case_data_type,
+@@ -1515,7 +1541,7 @@ create_case(const char* baseURL,
+ 
+   int redirect_createcase_count = 0;
+  redirect_createcase:;
+-  response_data_t* createcase_response = post_string(URL,
++  response_data_t* createcase_response = post_string(URL, cert_data,
+                                                      username,
+                                                      password,
+                                                      case_data_type,
+@@ -1542,7 +1568,8 @@ create_case(const char* baseURL,
+ 
+ const char* 
+ send_report_to_new_case( const char* baseURL,
+-                         const char* username,
++                         const char* cert_data,
++			 const char* username,
+                          const char* password,
+                          const char* summary,
+                          const char* description,
+@@ -1557,6 +1584,7 @@ send_report_to_new_case( const char* baseURL,
+   if (!case_data) return NULL;
+ 
+   response_data_t* createcase_response = create_case(baseURL,
++						     cert_data,
+                                                      username,
+                                                      password,
+                                                      "application/xml",
+@@ -1571,7 +1599,7 @@ send_report_to_new_case( const char* baseURL,
+     if (createcase_response->location
+         && strlen(createcase_response->location) > 0) {
+       response_data_t* attach_response = 
+-        attach_file_to_case(createcase_response->location, 
++        attach_file_to_case(createcase_response->location, cert_data, 
+                             username, password,
+                             NULL,
+                             report_file_name);
+@@ -1602,13 +1630,14 @@ send_report_to_new_case( const char* baseURL,
+ 
+ const char* 
+ send_report_to_existing_case( const char* baseURL,
++			      const char* cert_data,
+                               const char* username,
+                               const char* password,
+                               const char* case_name,
+                               const char* report_file_name ) {
+ 
+   response_data_t* attach_response = 
+-    attach_file_to_case(baseURL, 
++    attach_file_to_case(baseURL, cert_data, 
+                         username, password, 
+                         case_name, report_file_name);
+ 

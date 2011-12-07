@@ -1,0 +1,65 @@
+From 06bb062c4114c807517e5ae12d59add9144a26f6 Mon Sep 17 00:00:00 2001
+From: Gavin Romig-Koch <gavin@redhat.com>
+Date: Fri, 20 Aug 2010 19:55:09 -0400
+Subject: [PATCH] correct how we are gathering Product and Version information (RHEL 625109)
+
+diff --git a/python/report/release_information.py b/python/report/release_information.py
+index e7402c3..d10e11d 100644
+--- a/python/report/release_information.py
++++ b/python/report/release_information.py
+@@ -46,6 +46,23 @@ def getProduct_fromPRODUCT():
+     except:
+         return ""
+ 
++def getProduct_fromFILE():
++    for each_path in SYSTEM_RELEASE_PATHS:
++        if os.path.exists(each_path):
++            file = open(each_path, "r")
++            content = file.read()
++            if content.startswith("Red Hat Enterprise Linux"):
++                return "Red Hat Enterprise Linux"
++
++            if content.startswith("Fedora"):
++                return "Fedora"
++
++            i = content.find(" release")
++            if i > -1:
++                return content[0:i]
++
++    return ""
++
+ def getVersion_fromRPM():
+     try:
+         import rpm
+@@ -86,10 +103,13 @@ def getProduct():
+     """Attempt to determine the product of the running system by first asking
+        rpm, and then falling back on a hardcoded default.
+     """
+-    product = getProduct_fromRPM()
++    product = getProduct_fromPRODUCT()
+     if product:
+         return product
+-    product = getProduct_fromPRODUCT()
++    product = getProduct_fromFILE()
++    if product:
++        return product
++    product = getProduct_fromRPM()
+     if product:
+         return product
+ 
+@@ -100,13 +120,13 @@ def getVersion():
+        rpm, and then falling back on a hardcoded default.  Always return as
+        a string.
+     """
+-    version = getVersion_fromRPM()
++    version = getVersion_fromPRODUCT()
+     if version:
+         return version
+     version = getVersion_fromFILE()
+     if version:
+         return version
+-    version = getVersion_fromPRODUCT()
++    version = getVersion_fromRPM()
+     if version:
+         return version
+ 

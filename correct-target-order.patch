@@ -1,0 +1,81 @@
+diff --git a/etc/report.d/RHEL.conf b/etc/report.d/RHEL.conf
+index 8d0b4ff..b456f99 100644
+--- a/etc/report.d/RHEL.conf
++++ b/etc/report.d/RHEL.conf
+@@ -1,5 +1,7 @@
+ [Red Hat Global Support]
+ 
++priority=1
++
+ # plugin
+ plugin=strata
+ 
+@@ -19,9 +21,12 @@ buttonURLRepl = access.redhat.com/support
+ #strata_host = access.redhat.com
+ 
+ 
+-[FTP to dropbox.redhat.com]
++[Red Hat Global Support (FTP)]
++
++priority=2
++
+ plugin=ftp
+-description="Plugin to send file to ftp"
++description="Plugin to send file to dropbox.redhat.com"
+ 
+ # urldir is the directory that the report should be uploaded to
+ #  it must be formatted as a URL, and must be a directory 
+diff --git a/python/report/__init__.py b/python/report/__init__.py
+index 4cb01c7..9e34bb2 100644
+--- a/python/report/__init__.py
++++ b/python/report/__init__.py
+@@ -376,6 +376,7 @@ def createSignatureFromFile( filename, io ):
+ def buildChoices(signature, io, config, rptopts):
+     """ builds an array of choices """
+     choices = []
++    priorities = []
+     choice = None
+ 
+     (modulefile, modulepath, moduletype) = imputil.imp.find_module("plugins",sys.modules[__name__].__path__)
+@@ -423,13 +424,34 @@ def buildChoices(signature, io, config, rptopts):
+                 optionsDict[k] = v
+ 
+             if 'target' not in optionsDict:
+-                choices.append( \
+-                    iomodule.ChoiceValue( \
+-                        module.labelFunction(eachSection),
+-                        module.descriptionFunction(optionsDict),
+-                        (lambda module, optionsDict: 
+-                         lambda signature, io : 
+-                         module.report(signature, io, optionsDict))(module, optionsDict)))
++                this_choice = iomodule.ChoiceValue( \
++                    module.labelFunction(eachSection),
++                    module.descriptionFunction(optionsDict),
++                    (lambda module, optionsDict: 
++                     lambda signature, io : 
++                     module.report(signature, io, optionsDict))(module, optionsDict))
++                if 'priority' in optionsDict:
++                    try:
++                        this_priority = int(optionsDict['priority'])
++                    except ValueError:
++                        this_priority = None
++                else:
++                    this_priority = None
++
++                if this_priority is None:
++                    choices.append(this_choice)
++                    priorities.append(this_priority)
++
++                else:
++                    for index in range(len(priorities)):
++                        if priorities[index] is None \
++                                or this_priority < priorities[index]:
++                            break;
++                    else:
++                        index = len(priorities)
++
++                    choices.insert(index, this_choice)
++                    priorities.insert(index, this_priority)
+ 
+             elif optionsDict['target'] == module.labelFunction(eachSection) :
+                 return (lambda module, optionsDict: 

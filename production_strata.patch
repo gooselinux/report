@@ -1,0 +1,53 @@
+This patch reconfigures report for RHEL6 production.  Primarily this enables
+the strata plugin, and disables the Bugzilla plugin.
+
+
+Index: etc/report.d/RHEL.conf
+===================================================================
+--- etc/report.d/RHEL.conf (revision b56319fa261ffe844816be4ce0cfc576e314bd19)
++++ etc/report.d/RHEL.conf (revision 9866ae5bd39aa1b63187dc3d622aef8a1d758041)
+@@ -6,5 +6,8 @@
+ # strataURL is the base URL of the Strata server
+ #   if not set, strataURL defaults to http://<strata_host>/Strata
+-strataURL = https://access.redhat.com/Strata
++strataURL = https://api.access.redhat.com/rs
++
++buttonURLPattern = api.access.redhat.com/rs
++buttonURLRepl = access.redhat.com/support
+ 
+ # if strataURL is not set, strata_host can be, and is used to 
+Index: python/report/plugins/strata/__init__.py
+===================================================================
+--- python/report/plugins/strata/__init__.py (revision 6496554c53fb963fcb25bb0e773f11e3a0902cd8)
++++ python/report/plugins/strata/__init__.py (revision 9866ae5bd39aa1b63187dc3d622aef8a1d758041)
+@@ -32,5 +32,5 @@
+ import xml.etree.ElementTree as etree
+ 
+-import report.release_information
++from report import release_information
+ 
+ from .strata import post_signature, send_report_to_new_case, send_report_to_existing_case, strata_client_strerror
+@@ -131,10 +131,10 @@
+             product = signature['product'].asString()
+         else:
+-            product = report.release_information.getProduct()
++            product = release_information.getProduct()
+ 
+         if 'version' in signature:
+             version = signature['version'].asString()
+         else:
+-            version = report.release_information.getVersion()
++            version = release_information.getVersion()
+ 
+         response = send_report_to_new_case(URL, 
+Index: report.spec.in
+===================================================================
+--- report.spec.in (revision a9cf1e2b733c39209e020e3cb57da1453c44fdbc)
++++ report.spec.in (revision 9866ae5bd39aa1b63187dc3d622aef8a1d758041)
+@@ -25,5 +25,5 @@
+ %if "%{?build_as_for_rhel_production}" == ""
+ %if "%{?build_as_for_rhel_test}" == ""
+-%define build_as_for_rhel_test 1
++%define build_as_for_rhel_production 1
+ %endif
+ %endif

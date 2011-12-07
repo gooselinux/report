@@ -1,0 +1,79 @@
+diff --git a/etc/report.conf b/etc/report.conf
+index 13334bb..7ef828a 100644
+--- a/etc/report.conf
++++ b/etc/report.conf
+@@ -1,8 +1,5 @@
+ # this is a config file for report
+ [main]
+-# Define default plugin: [RHEL, bugzilla, localsave, scp]
+-# plugin=localsave
+-
+ # Define syslog 
+ # Priority levels (high to low): (default LOG_INFO)
+ #    LOG_CRIT, LOG_WARNING, LOG_INFO, LOG_DEBUG.
+diff --git a/python/report/__init__.py b/python/report/__init__.py
+index e8f0922..4cb01c7 100644
+--- a/python/report/__init__.py
++++ b/python/report/__init__.py
+@@ -393,26 +393,48 @@ def buildChoices(signature, io, config, rptopts):
+         optionsDict = {}
+         for eachOption in config.options(eachSection):
+             optionsDict[eachOption] = config.get(eachSection,eachOption)
++
++        module = None
+         if "plugin" in optionsDict:
+             moduleName = optionsDict["plugin"]
+-        (modulefile, modulepath, moduletype) = imputil.imp.find_module(moduleName,alternatives.__path__)
++        else:
++            moduleName = eachSection
++
+         try:
++            (modulefile, modulepath, moduletype) = imputil.imp.find_module(moduleName,alternatives.__path__)
+             module = imputil.imp.load_module("report.plugins." + moduleName, modulefile, modulepath, moduletype)
++                
++        except ImportError as error:
++            if 'target' not in optionsDict or \
++                    optionsDict['target'] == eachSection:
++                DisplayFailMessage(io, _("Could Not Load Plugin"),
++                                   (_("The target '%(target)s' requires the plugin '%(plugin)s' which can't be loaded: ") % \
++                                        {'target':eachSection,
++                                         'plugin':moduleName}) + \
++                                       str(error) + "\n" + \
++                                       _("This target will be ignored."))
++
+         finally:
+             if modulefile:
+                 modulefile.close()
+-                
+-        for k,v in rptopts.iteritems():
+-            optionsDict[k] = v
+-
+-        if 'target' not in optionsDict:
+-            choices.append( \
+-                iomodule.ChoiceValue( \
+-                    module.labelFunction(eachSection),
+-                    module.descriptionFunction(optionsDict),
+-                    (lambda module, optionsDict: lambda signature, io : module.report(signature, io, optionsDict))(module, optionsDict)))
+-        elif optionsDict['target'] == module.labelFunction(eachSection) :
+-            return (lambda module, optionsDict: lambda signature, io : module.report(signature, io, optionsDict))(module, optionsDict)
++
++        if module:
++            for k,v in rptopts.iteritems():
++                optionsDict[k] = v
++
++            if 'target' not in optionsDict:
++                choices.append( \
++                    iomodule.ChoiceValue( \
++                        module.labelFunction(eachSection),
++                        module.descriptionFunction(optionsDict),
++                        (lambda module, optionsDict: 
++                         lambda signature, io : 
++                         module.report(signature, io, optionsDict))(module, optionsDict)))
++
++            elif optionsDict['target'] == module.labelFunction(eachSection) :
++                return (lambda module, optionsDict: 
++                        lambda signature, io : 
++                        module.report(signature, io, optionsDict))(module, optionsDict)
+ 
+ 
+     # if we haven't loaded any choices from the config files, 

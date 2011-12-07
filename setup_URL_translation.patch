@@ -1,0 +1,14 @@
+diff --git a/etc/report.d/strata-test.conf b/etc/report.d/strata-test.conf
+index 7150049..ded9f94 100644
+--- a/etc/report.d/strata-test.conf
++++ b/etc/report.d/strata-test.conf
+@@ -9,6 +9,9 @@ strataURL = https://api.avalon-ci.gss.redhat.com/rs
+ 
+ sslcertdata = INSECURE
+ 
++buttonURLPattern = api.avalon-ci.gss.redhat.com/rs
++buttonURLRepl = avalon-ci.gss.redhat.com/support
++
+ # if strataURL is not set, strata_host can be, and is used to 
+ #    create the default strataURL
+ #    strata_host should be a host name, optionally suffixed by 

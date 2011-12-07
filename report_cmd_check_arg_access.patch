@@ -1,0 +1,17 @@
+diff --git a/python/bin/report b/python/bin/report
+index 6425418..b73e039 100755
+--- a/python/bin/report
++++ b/python/bin/report
+@@ -93,6 +93,12 @@ def parse_options(options):
+         raise SystemExit(_('Please specify only 1 filename.'))
+     else:
+         cmdopts.filename = os.path.abspath(cmdargs[0])
++        try:
++            file(cmdopts.filename)
++        except IOError as error:
++            raise SystemExit((_("Error accessing '%s': ") % (cmdargs[0],))
++                             + str(error))
++
+         if not os.path.exists(cmdopts.filename):
+             raise SystemExit(_('File %s does not exist.') % (cmdopts.filename,))
+ 
