@@ -18,7 +18,7 @@
 #
 
 %if 0%{?rhel}
-%define build_as_for_rhel 1
+%define build_as_for_rhel 0
 %endif
 
 %if 0%{?build_as_for_rhel}
@@ -67,7 +67,7 @@
 %else
 # then for everything else
 %if "%{?bugzilla}" == ""
-%define bugzilla 1
+%define bugzilla 0
 %endif
 %if "%{?obsolete_old_RHEL}" == ""
 %define obsolete_old_RHEL 0
@@ -78,7 +78,7 @@
 
 Name:           report
 Version:        0.18
-Release:        7%{?dist}
+Release:        7%{?dist}.goose.1
 Summary:        Incident reporting library
 
 Group:          System Environment/Libraries
@@ -431,6 +431,9 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Fri Mar 9 2012 Clint Savage <herlo@gooseproject.org> 0.18-7.goose.1
+- Removed bugzilla and upstream references
+
 * Mon Aug 20 2010 Gavin Romig-Koch <gavin@redhat.com> 0.18-7
 - correct how we are gathering Product and Version information (RHEL 625109)
 
